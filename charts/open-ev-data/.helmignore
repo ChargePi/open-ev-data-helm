@@ -1,0 +1,9 @@
+# Patterns to ignore when building packages.
+# Note: do NOT ignore *.tgz here — that would also exclude the downloaded
+# dependency archives under charts/ (e.g. charts/postgresql-*.tgz).
+.git/
+.gitignore
+.DS_Store
+.vscode/
+.idea/
+*.md

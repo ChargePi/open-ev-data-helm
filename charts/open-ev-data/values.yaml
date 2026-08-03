@@ -1,0 +1,125 @@
+# Default values for the open-ev-data chart.
+
+## @section open-ev-data-api (ev-server)
+## ev-server's DATABASE_URL is always a path to a sqlite file — it has no
+## PostgreSQL (or any other) runtime backend, regardless of what URL scheme
+## you pass it. The "postgresql" entry in the upstream ETL's --formats list is
+## an *export* format (a .sql dump for loading into your own tooling), not
+## something ev-server itself can connect to.
+api:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/open-ev-data/ev-server
+    # -- Pin this to a specific release in production; "latest" is the only
+    # tag guaranteed to exist (the chart's own appVersion is just metadata,
+    # not necessarily a published image tag).
+    tag: "latest"
+    pullPolicy: IfNotPresent
+
+  imagePullSecrets: []
+
+  database:
+    # -- Path to the sqlite database file inside the container.
+    path: /data/vehicles.db
+
+    # -- Downloads the dataset's .db release asset from GitHub Releases into
+    # an emptyDir volume shared with the api container, mounted at the
+    # directory containing database.path. Disable this and supply your own
+    # extraVolumes/extraVolumeMounts (e.g. a PVC or ConfigMap already
+    # containing the file) to source the data some other way.
+    fetch:
+      enabled: true
+      image:
+        repository: alpine
+        tag: "3.20"
+        pullPolicy: IfNotPresent
+      # -- GitHub repo the dataset .db release asset is downloaded from.
+      githubRepo: open-ev-data/open-ev-data-dataset
+      # -- Release tag to fetch, e.g. "v1.2.3". "latest" resolves to the newest release.
+      releaseTag: latest
+      # -- Optional: name of an existing Secret (key: token) with a GitHub
+      # token, used to avoid unauthenticated GitHub API rate limits.
+      githubTokenSecret: ""
+
+  service:
+    type: ClusterIP
+    port: 3000
+
+  env:
+    host: "0.0.0.0"
+    port: 3000
+    logLevel: info
+    corsOrigins: "*"
+    enableCompression: true
+    enableOpenapi: true
+
+  extraEnv: []
+  # - name: SOME_EXTRA_VAR
+  #   value: "value"
+
+  livenessProbe:
+    httpGet:
+      path: /api/v1/health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  readinessProbe:
+    httpGet:
+      path: /api/v1/health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+  resources: {}
+  # limits:
+  #   cpu: 500m
+  #   memory: 256Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: ""
+
+  podAnnotations: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    # The ev-server image's Dockerfile sets `USER appuser` (a symbolic name,
+    # not a numeric UID) — kubelet cannot verify runAsNonRoot against a
+    # non-numeric image user, so an explicit numeric runAsUser is required.
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+    readOnlyRootFilesystem: false
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+    # -- Set to a number to also scale on memory utilization; leave empty/0 to disable.
+    targetMemoryUtilizationPercentage: 80
+
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: ev-api.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []

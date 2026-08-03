@@ -1,0 +1,134 @@
+{{- if .Values.api.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "api.fullname" . }}
+  labels:
+    {{- include "api.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.api.autoscaling.enabled }}
+  replicas: {{ .Values.api.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "api.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "api.selectorLabels" . | nindent 8 }}
+      {{- with .Values.api.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "api.serviceAccountName" . }}
+      {{- with .Values.api.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.api.podSecurityContext | nindent 8 }}
+      {{- if .Values.api.database.fetch.enabled }}
+      initContainers:
+        - name: fetch-dataset
+          image: "{{ .Values.api.database.fetch.image.repository }}:{{ .Values.api.database.fetch.image.tag }}"
+          imagePullPolicy: {{ .Values.api.database.fetch.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.api.securityContext | nindent 12 }}
+          command: ["/bin/sh", "/scripts/fetch.sh"]
+          env:
+            - name: DATABASE_PATH
+              value: {{ .Values.api.database.path | quote }}
+            - name: GITHUB_REPO
+              value: {{ .Values.api.database.fetch.githubRepo | quote }}
+            - name: RELEASE_TAG
+              value: {{ .Values.api.database.fetch.releaseTag | quote }}
+            {{- if .Values.api.database.fetch.githubTokenSecret }}
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.api.database.fetch.githubTokenSecret }}
+                  key: token
+            {{- end }}
+          volumeMounts:
+            - name: fetch-script
+              mountPath: /scripts
+            - name: dataset
+              mountPath: {{ dir .Values.api.database.path }}
+      {{- end }}
+      containers:
+        - name: api
+          image: {{ include "api.image" . }}
+          imagePullPolicy: {{ .Values.api.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.api.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.api.env.port }}
+              protocol: TCP
+          env:
+            - name: HOST
+              value: {{ .Values.api.env.host | quote }}
+            - name: PORT
+              value: {{ .Values.api.env.port | quote }}
+            - name: LOG_LEVEL
+              value: {{ .Values.api.env.logLevel | quote }}
+            - name: CORS_ORIGINS
+              value: {{ .Values.api.env.corsOrigins | quote }}
+            - name: ENABLE_COMPRESSION
+              value: {{ .Values.api.env.enableCompression | quote }}
+            - name: ENABLE_OPENAPI
+              value: {{ .Values.api.env.enableOpenapi | quote }}
+            - name: DATABASE_URL
+              value: {{ .Values.api.database.path | quote }}
+            {{- with .Values.api.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.api.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.api.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.api.resources | nindent 12 }}
+          {{- if or .Values.api.database.fetch.enabled .Values.api.extraVolumeMounts }}
+          volumeMounts:
+            {{- if .Values.api.database.fetch.enabled }}
+            - name: dataset
+              mountPath: {{ dir .Values.api.database.path }}
+              readOnly: true
+            {{- end }}
+            {{- with .Values.api.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
+      {{- if or .Values.api.database.fetch.enabled .Values.api.extraVolumes }}
+      volumes:
+        {{- if .Values.api.database.fetch.enabled }}
+        - name: fetch-script
+          configMap:
+            name: {{ include "api.fullname" . }}-fetch-dataset
+            defaultMode: 0755
+        - name: dataset
+          emptyDir: {}
+        {{- end }}
+        {{- with .Values.api.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- end }}
+      {{- with .Values.api.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.api.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

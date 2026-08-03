@@ -1,0 +1,36 @@
+{{- if and .Values.api.enabled .Values.api.database.fetch.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "api.fullname" . }}-fetch-dataset
+  labels:
+    {{- include "api.labels" . | nindent 4 }}
+data:
+  fetch.sh: |
+    #!/bin/sh
+    set -eu
+
+    AUTH_HEADER=""
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+      AUTH_HEADER="--header=Authorization: token ${GITHUB_TOKEN}"
+    fi
+
+    if [ "${RELEASE_TAG}" = "latest" ]; then
+      RELEASES_URL="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
+    else
+      RELEASES_URL="https://api.github.com/repos/${GITHUB_REPO}/releases/tags/${RELEASE_TAG}"
+    fi
+
+    echo "Resolving dataset release from ${RELEASES_URL}"
+    DOWNLOAD_URL=$(wget -qO- ${AUTH_HEADER} "${RELEASES_URL}" | grep '"browser_download_url"' | grep '\.db"' | head -n1 | cut -d'"' -f4)
+
+    if [ -z "${DOWNLOAD_URL}" ]; then
+      echo "Could not find a .db asset on the requested release" >&2
+      exit 1
+    fi
+
+    echo "Downloading dataset sqlite database from ${DOWNLOAD_URL}"
+    wget -qO "${DATABASE_PATH}" ${AUTH_HEADER} "${DOWNLOAD_URL}"
+
+    echo "Dataset ready at ${DATABASE_PATH}"
+{{- end }}

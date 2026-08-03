@@ -1,0 +1,66 @@
+name: Release Chart
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Chart version to publish (e.g. 0.2.0). Defaults to the pushed tag."
+        required: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  CHART_PATH: charts/open-ev-data
+  REGISTRY: ghcr.io
+  # Charts are published as oci://ghcr.io/<owner>/charts/open-ev-data
+  REPO_OWNER: open-ev-data
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: "v3.16.4"
+
+      - name: Resolve version
+        id: version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME#v}"
+          fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Lint chart
+        run: helm lint "${{ env.CHART_PATH }}"
+
+      - name: Package chart
+        run: |
+          helm package "${{ env.CHART_PATH }}" \
+            --version "${{ steps.version.outputs.version }}" \
+            --app-version "${{ steps.version.outputs.version }}" \
+            --destination .cr-release-packages
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login "${{ env.REGISTRY }}" \
+            --username "${{ github.actor }}" --password-stdin
+
+      - name: Push chart to GHCR (OCI)
+        run: |
+          helm push \
+            ".cr-release-packages/open-ev-data-${{ steps.version.outputs.version }}.tgz" \
+            "oci://${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/charts"
+
+      - name: Summary
+        run: |
+          echo "Published oci://${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/charts/open-ev-data:${{ steps.version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"

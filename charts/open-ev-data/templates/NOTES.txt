@@ -1,0 +1,23 @@
+OpenEV Data has been deployed.
+
+{{- if .Values.api.enabled }}
+
+API service:
+{{- if .Values.api.ingress.enabled }}
+{{- range .Values.api.ingress.hosts }}
+  http{{ if $.Values.api.ingress.tls }}s{{ end }}://{{ .host }}{{ (first .paths).path }}
+{{- end }}
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ .Release.Name }}-api {{ .Values.api.service.port }}:{{ .Values.api.service.port }}
+  curl http://localhost:{{ .Values.api.service.port }}/api/v1/health
+{{- end }}
+
+Database:
+{{- if .Values.api.database.fetch.enabled }}
+  A sqlite database is fetched at pod startup from https://github.com/{{ .Values.api.database.fetch.githubRepo }}
+  (release: {{ .Values.api.database.fetch.releaseTag }}) and mounted at {{ .Values.api.database.path }}.
+{{- else }}
+  api.database.fetch is disabled — make sure extraVolumes/extraVolumeMounts supply
+  {{ .Values.api.database.path }} yourself.
+{{- end }}
+{{- end }}
