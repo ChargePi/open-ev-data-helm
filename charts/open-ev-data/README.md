@@ -17,7 +17,7 @@ dependencies — everything lives directly under `templates/`.
 Charts are published as OCI artifacts to GHCR. Install directly by reference:
 
 ```console
-helm install my-release oci://ghcr.io/open-ev-data/charts/open-ev-data --version <version>
+helm install my-release oci://ghcr.io/chargepi/open-ev-data-helm/open-ev-data --version <version>
 ```
 
 Or from a local checkout of this repository:

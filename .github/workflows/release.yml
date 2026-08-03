@@ -17,8 +17,8 @@ permissions:
 env:
   CHART_PATH: charts/open-ev-data
   REGISTRY: ghcr.io
-  # Charts are published as oci://ghcr.io/<owner>/charts/open-ev-data
-  REPO_OWNER: open-ev-data
+  # Charts are published as oci://ghcr.io/<owner>/open-ev-data-helm/open-ev-data
+  REPO_OWNER: chargepi
 
 jobs:
   release:
@@ -59,8 +59,8 @@ jobs:
         run: |
           helm push \
             ".cr-release-packages/open-ev-data-${{ steps.version.outputs.version }}.tgz" \
-            "oci://${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/charts"
+            "oci://${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/open-ev-data-helm"
 
       - name: Summary
         run: |
-          echo "Published oci://${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/charts/open-ev-data:${{ steps.version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Published oci://${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/open-ev-data-helm/open-ev-data:${{ steps.version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
