@@ -12,7 +12,7 @@ as OCI artifacts to GHCR.
 ## Installing
 
 ```console
-helm install my-release oci://ghcr.io/open-ev-data/charts/open-ev-data --version <version>
+helm install my-release oci://ghcr.io/chargepi/open-ev-data-helm/open-ev-data --version <version>
 ```
 
 See [`charts/open-ev-data/README.md`](charts/open-ev-data/README.md) for full configuration docs, including
