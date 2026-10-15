@@ -1,0 +1,41 @@
+name: openev-data-mcp chart
+
+on:
+  pull_request:
+    paths:
+      - "charts/openev-data-mcp/**"
+      - ".github/workflows/openev-data-mcp.yml"
+      - ".github/workflows/chart-test.yml"
+  push:
+    branches: [main]
+    paths:
+      - "charts/openev-data-mcp/**"
+      - ".github/workflows/openev-data-mcp.yml"
+      - ".github/workflows/chart-test.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/chart-test.yml
+    with:
+      chart: openev-data-mcp
+      chart-repos: qdrant=https://qdrant.github.io/qdrant-helm
+      # Default values (bundled CNPG cluster and Qdrant), external database,
+      # and external Qdrant with the scheduled vector sync.
+      template-args: |
+        --set mcp.config.embedding.apiKey=dummy
+        -f charts/openev-data-mcp/ci/external-db-values.yaml
+        -f charts/openev-data-mcp/ci/external-qdrant-values.yaml
+      install-cnpg: true
+      release: mcp-mock
+      # There is no Gemini key in CI: the server only needs one to answer
+      # searches, but the vector sync would fail embedding the dataset.
+      install-args: --set mcp.config.embedding.apiKey=dummy --set vectorSync.enabled=false
+      install-timeout: 8m
+      rollouts: |
+        deployment/mcp-mock-mcp
+        statefulset/mcp-mock-qdrant
+      smoke-test: kubectl -n "$RELEASE" exec deploy/mcp-mock-mcp -- /usr/local/bin/grpc_health_probe -addr=:9090

@@ -1,0 +1,38 @@
+{{- if .Values.migration.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mcp.fullname" . }}-migrate
+  labels:
+    {{- include "mcp.labels" . | nindent 4 }}
+  annotations:
+    # -- post-install only: migrations/001_initial.sql is a one-time schema +
+    # seed bootstrap (mirrors Postgres' own docker-entrypoint-initdb.d and
+    # CNPG's postInitApplicationSQLRefs, which also only run once, against an
+    # empty database). Re-running it via post-upgrade would fail on
+    # already-applied migrations. Bump mcp.image.tag and re-apply manually
+    # if you need to pick up a newer upstream migration.
+    "helm.sh/hook": post-install
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+data:
+  migrate.sh: |
+    #!/bin/sh
+    set -eu
+
+    export PGPASSWORD="${DB_PASSWORD}"
+
+    echo "Waiting for ${DB_HOST}:${DB_PORT} to accept connections..."
+    until pg_isready -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" >/dev/null 2>&1; do
+      sleep 2
+    done
+
+    MIGRATION_URL="https://raw.githubusercontent.com/ChargePi/openev-data-mcp/${GIT_REF}/migrations/001_initial.sql"
+    echo "Fetching migration from ${MIGRATION_URL}"
+    wget -qO /tmp/001_initial.sql "${MIGRATION_URL}"
+
+    echo "Applying migration to ${DB_NAME}@${DB_HOST}:${DB_PORT}"
+    psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USER}" -d "${DB_NAME}" -v ON_ERROR_STOP=1 -f /tmp/001_initial.sql
+
+    echo "Migration applied."
+{{- end }}
