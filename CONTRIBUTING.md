@@ -29,8 +29,9 @@ Thanks for considering a contribution to this repository.
 ## Pull requests
 
 - Keep PRs focused on a single change where possible.
-- CI (`.github/workflows/lint-test.yml`) runs `helm lint`, `helm template` against a couple of value
-  combinations, and a mock deployment in a `kind` cluster on every PR — make sure it's green.
+- CI runs `helm lint`, `helm template` against a couple of value combinations, and a mock deployment
+  in a `kind` cluster for each chart a PR touches (one workflow per chart, e.g.
+  `.github/workflows/open-ev-data.yml`) — make sure it's green.
 - Describe *why* the change is needed, not just what changed.
 
 ## Releasing

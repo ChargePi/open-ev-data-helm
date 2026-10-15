@@ -1,0 +1,171 @@
+# Reusable chart CI: lints and templates one chart, then mock deploys it to a
+# kind cluster. Each chart has a small caller workflow that triggers on its
+# own paths and passes the chart-specific bits below.
+name: Chart test
+
+on:
+  workflow_call:
+    inputs:
+      chart:
+        description: Chart directory name under charts/.
+        type: string
+        required: true
+      chart-repos:
+        description: Comma-separated name=url Helm repositories the chart's dependencies come from.
+        type: string
+        default: ""
+      template-args:
+        description: >-
+          One `helm template` run per line, each line holding the extra arguments
+          for that run. ct lint already renders the chart with its default (or
+          ci/*-values.yaml) values.
+        type: string
+        default: ""
+      install-cnpg:
+        description: Install the CloudNativePG operator before deploying the chart.
+        type: boolean
+        default: false
+      release:
+        description: Release name of the mock deploy, also used as its namespace.
+        type: string
+        required: true
+      install-args:
+        description: Extra arguments for `helm install`.
+        type: string
+        default: ""
+      install-timeout:
+        type: string
+        default: 5m
+      rollouts:
+        description: Workloads (one per line, e.g. deployment/foo) that must finish rolling out.
+        type: string
+        default: ""
+      smoke-test:
+        description: Shell script run against the deployed release, with RELEASE set.
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+env:
+  CHART: charts/${{ inputs.chart }}
+  RELEASE: ${{ inputs.release }}
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: "v3.16.4"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2
+
+      - name: Run chart-testing (lint)
+        env:
+          CHART_REPOS: ${{ inputs.chart-repos }}
+        run: |
+          ct lint --charts "$CHART" --validate-maintainers=false \
+            ${CHART_REPOS:+--chart-repos "$CHART_REPOS"}
+
+      - name: Build chart dependencies
+        env:
+          CHART_REPOS: ${{ inputs.chart-repos }}
+        run: |
+          for repo in ${CHART_REPOS//,/ }; do
+            helm repo add "${repo%%=*}" "${repo#*=}"
+          done
+          helm dependency build "$CHART"
+
+      - name: helm template
+        env:
+          TEMPLATE_ARGS: ${{ inputs.template-args }}
+        run: |
+          while IFS= read -r args; do
+            [ -n "$args" ] || continue
+            echo "::group::helm template $args"
+            eval "helm template test \"\$CHART\" $args"
+            echo "::endgroup::"
+          done <<< "$TEMPLATE_ARGS"
+
+  mock-deploy:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: "v3.16.4"
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: chart-testing
+
+      - name: Install CloudNativePG operator
+        if: inputs.install-cnpg
+        run: |
+          helm repo add cnpg https://cloudnative-pg.github.io/charts
+          helm upgrade --install cnpg-operator cnpg/cloudnative-pg \
+            --namespace cnpg-system --create-namespace \
+            --wait --timeout 3m
+
+      - name: Build chart dependencies
+        env:
+          CHART_REPOS: ${{ inputs.chart-repos }}
+        run: |
+          for repo in ${CHART_REPOS//,/ }; do
+            helm repo add "${repo%%=*}" "${repo#*=}"
+          done
+          helm dependency build "$CHART"
+
+      - name: Install chart
+        env:
+          INSTALL_ARGS: ${{ inputs.install-args }}
+          INSTALL_TIMEOUT: ${{ inputs.install-timeout }}
+        run: |
+          eval "helm install \"\$RELEASE\" \"\$CHART\" \
+            --namespace \"\$RELEASE\" --create-namespace \
+            --wait --timeout \"\$INSTALL_TIMEOUT\" $INSTALL_ARGS"
+
+      - name: Verify workloads are ready
+        env:
+          ROLLOUTS: ${{ inputs.rollouts }}
+        run: |
+          kubectl -n "$RELEASE" get all
+          for workload in $ROLLOUTS; do
+            kubectl -n "$RELEASE" rollout status "$workload" --timeout=120s
+          done
+
+      - name: Smoke test
+        if: inputs.smoke-test != ''
+        run: ${{ inputs.smoke-test }}
+
+      - name: Debug on failure
+        if: failure()
+        run: |
+          kubectl -n "$RELEASE" get all
+          kubectl -n "$RELEASE" describe pods
+          for pod in $(kubectl -n "$RELEASE" get pods -o name); do
+            echo "::group::logs $pod"
+            kubectl -n "$RELEASE" logs "$pod" --all-containers --prefix --tail=200 || true
+            echo "::endgroup::"
+          done
+          if [ "${{ inputs.install-cnpg }}" = "true" ]; then
+            kubectl -n cnpg-system logs -l app.kubernetes.io/name=cloudnative-pg --tail=200 || true
+          fi
+
+      - name: Uninstall
+        if: always()
+        run: helm uninstall "$RELEASE" --namespace "$RELEASE" --ignore-not-found
