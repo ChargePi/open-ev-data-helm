@@ -61,7 +61,7 @@ key in a Secret of its own.
 `openev-data-mcp` does not run its schema migration on startup — it just connects. This chart applies
 the upstream project's `migrations/001_initial.sql` (schema + seed data) via a **post-install-only** Job
 that fetches the file from `raw.githubusercontent.com/ChargePi/openev-data-mcp` at the release tag
-matching the deployed image (`v<mcp.image.tag>`, defaulting to the chart's `appVersion`), the same way
+matching the deployed image (the `mcp.image.tag` git tag, defaulting to `v<appVersion>`), the same way
 `api.database.fetch` in the sibling `open-ev-data` chart fetches its dataset — rather than vendoring the
 SQL into this chart, so the schema always matches the server version.
 
@@ -106,7 +106,7 @@ without a Helm upgrade.
 | Key | Description | Default |
 |---|---|---|
 | `mcp.replicaCount` | Replica count | `1` |
-| `mcp.image.repository` / `mcp.image.tag` | MCP server image; `tag` defaults to the chart's `appVersion` | `ghcr.io/chargepi/openev-data-mcp` / `""` |
+| `mcp.image.repository` / `mcp.image.tag` | MCP server image; `tag` defaults to `v<appVersion>`, the release's git tag | `ghcr.io/chargepi/openev-data-mcp` / `""` |
 | `mcp.service.port` | MCP (streamable HTTP) port | `8080` |
 | `mcp.service.healthPort` | gRPC health-check port (probed via the `grpc_health_probe` binary baked into the image) | `9090` |
 | `mcp.config.refreshInterval` | How often the in-memory resource cache refreshes from the database | `5m` |
@@ -118,7 +118,7 @@ without a Helm upgrade.
 | `postgresql.cnpg.storage.size` | PVC size for the CNPG cluster | `1Gi` |
 | `postgresql.external.*` | Connection details for a database you manage yourself, used when `postgresql.cnpg.enabled: false` | — |
 | `migration.enabled` | Run the post-install schema/seed Job | `true` |
-| `migration.gitRef` | Override the git ref to fetch `migrations/001_initial.sql` from; required if `mcp.image.tag` isn't a semver release | `""` (`v<image tag>`) |
+| `migration.gitRef` | Override the git ref to fetch `migrations/001_initial.sql` from; required if `mcp.image.tag` isn't a semver release | `""` (the image tag) |
 | `mcp.config.embedding.apiKey` / `mcp.config.embedding.existingSecret` | Gemini API key, inline or from an existing Secret (key `existingSecretKey`); one is required | `""` / `""` |
 | `mcp.config.embedding.model` / `mcp.config.embedding.dimensions` | Embedding model and vector size; changing the size requires deleting the collection | `gemini-embedding-001` / `768` |
 | `mcp.config.search.collection` | Qdrant collection name | `ev_vehicles` |
@@ -136,7 +136,7 @@ See `values.yaml` for the full set of options (resources, security contexts, nod
 ## Upgrading the MCP server
 
 ```console
-helm upgrade my-release charts/openev-data-mcp --set mcp.image.tag=1.0.0
+helm upgrade my-release charts/openev-data-mcp --set mcp.image.tag=v1.0.0
 ```
 
 The database migration Job does not re-run on upgrade (see above); the `mcp` Deployment rolls and the

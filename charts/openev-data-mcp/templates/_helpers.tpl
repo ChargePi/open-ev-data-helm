@@ -22,8 +22,12 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 {{- end -}}
 
+{{/*
+Upstream publishes images tagged with the release's git tag (v<semver>), while
+the chart's appVersion is plain semver.
+*/}}
 {{- define "mcp.version" -}}
-{{- .Values.mcp.image.tag | default .Chart.AppVersion -}}
+{{- .Values.mcp.image.tag | default (printf "v%s" .Chart.AppVersion) -}}
 {{- end -}}
 
 {{- define "mcp.image" -}}
@@ -31,18 +35,18 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end -}}
 
 {{/*
-Upstream tags releases as v<semver> and publishes the image as <semver>, so the
-migration matching the deployed image lives at v<image tag>.
+Image tags are the release's git tag, so the migration matching the deployed
+image lives at that same ref (a tag given without the "v" prefix gets one).
 */}}
 {{- define "mcp.migrationGitRef" -}}
 {{- if .Values.migration.gitRef -}}
 {{- .Values.migration.gitRef -}}
 {{- else -}}
 {{- $version := include "mcp.version" . -}}
-{{- if not (regexMatch "^[0-9]+\\.[0-9]+\\.[0-9]+" $version) -}}
+{{- if not (regexMatch "^v?[0-9]+\\.[0-9]+\\.[0-9]+" $version) -}}
 {{- fail (printf "migration.gitRef is required when mcp.image.tag (%q) is not a semver release" $version) -}}
 {{- end -}}
-{{- printf "v%s" $version -}}
+{{- printf "v%s" (trimPrefix "v" $version) -}}
 {{- end -}}
 {{- end -}}
 

@@ -8,8 +8,9 @@ mcp:
 
   image:
     repository: ghcr.io/chargepi/openev-data-mcp
-    # -- Overrides the image tag, which defaults to the chart's appVersion. Also
-    # selects the migration ref (v<tag>) unless migration.gitRef is set.
+    # -- Overrides the image tag, which defaults to v<chart appVersion> (images
+    # are tagged with the release's git tag). Also selects the migration ref
+    # unless migration.gitRef is set.
     tag: ""
     pullPolicy: IfNotPresent
 
@@ -181,8 +182,8 @@ postgresql:
 migration:
   enabled: true
   # -- Overrides the git ref (tag/branch/sha) to fetch migrations/001_initial.sql
-  # from. Defaults to v<image tag>; required when mcp.image.tag isn't a
-  # semver release (e.g. "latest" or a sha).
+  # from. Defaults to the image tag (v<semver>); required when mcp.image.tag
+  # isn't a semver release (e.g. "latest" or a sha).
   gitRef: ""
   image:
     repository: postgres
