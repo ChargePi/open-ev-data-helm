@@ -1,0 +1,27 @@
+{{- if .Values.vectorSync.cronJob.enabled }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ include "mcp.fullname" . }}-vector-sync
+  labels:
+    {{- include "mcp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vector-sync
+spec:
+  schedule: {{ .Values.vectorSync.cronJob.schedule | quote }}
+  # -- Two syncs writing the same collection would embed the same vehicles twice.
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: {{ .Values.vectorSync.cronJob.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ .Values.vectorSync.cronJob.failedJobsHistoryLimit }}
+  jobTemplate:
+    spec:
+      backoffLimit: {{ .Values.vectorSync.backoffLimit }}
+      activeDeadlineSeconds: {{ .Values.vectorSync.activeDeadlineSeconds }}
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: mcp-vector-sync
+            app.kubernetes.io/instance: {{ .Release.Name }}
+            app.kubernetes.io/component: vector-sync
+        spec:
+          {{- include "mcp.vectorSyncPodSpec" . | nindent 10 }}
+{{- end }}

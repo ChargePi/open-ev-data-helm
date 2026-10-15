@@ -15,14 +15,18 @@ permissions:
   packages: write
 
 env:
-  CHART_PATH: charts/open-ev-data
   REGISTRY: ghcr.io
-  # Charts are published as oci://ghcr.io/<owner>/open-ev-data-helm/open-ev-data
+  # Charts are published as oci://ghcr.io/<owner>/open-ev-data-helm/<chart>
   REPO_OWNER: chargepi
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        chart:
+          - open-ev-data
+          - openev-data-mcp
     steps:
       - uses: actions/checkout@v4
 
@@ -40,12 +44,27 @@ jobs:
           fi
           echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
 
+      - name: Build chart dependencies
+        run: |
+          helm repo add qdrant https://qdrant.github.io/qdrant-helm
+          helm dependency build "charts/${{ matrix.chart }}"
+
+      # Charts with required values (e.g. openev-data-mcp's Gemini API key) are
+      # linted with their ci/*-values.yaml examples instead of the defaults.
       - name: Lint chart
-        run: helm lint "${{ env.CHART_PATH }}"
+        run: |
+          CHART="charts/${{ matrix.chart }}"
+          if ls "${CHART}"/ci/*-values.yaml >/dev/null 2>&1; then
+            for values in "${CHART}"/ci/*-values.yaml; do
+              helm lint "${CHART}" -f "${values}"
+            done
+          else
+            helm lint "${CHART}"
+          fi
 
       - name: Package chart
         run: |
-          helm package "${{ env.CHART_PATH }}" \
+          helm package "charts/${{ matrix.chart }}" \
             --version "${{ steps.version.outputs.version }}" \
             --app-version "${{ steps.version.outputs.version }}" \
             --destination .cr-release-packages
@@ -58,9 +77,9 @@ jobs:
       - name: Push chart to GHCR (OCI)
         run: |
           helm push \
-            ".cr-release-packages/open-ev-data-${{ steps.version.outputs.version }}.tgz" \
+            ".cr-release-packages/${{ matrix.chart }}-${{ steps.version.outputs.version }}.tgz" \
             "oci://${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/open-ev-data-helm"
 
       - name: Summary
         run: |
-          echo "Published oci://${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/open-ev-data-helm/open-ev-data:${{ steps.version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Published oci://${{ env.REGISTRY }}/${{ env.REPO_OWNER }}/open-ev-data-helm/${{ matrix.chart }}:${{ steps.version.outputs.version }}" >> "$GITHUB_STEP_SUMMARY"

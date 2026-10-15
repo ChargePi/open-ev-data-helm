@@ -1,0 +1,245 @@
+# Default values for the openev-data-mcp chart.
+
+## @section mcp
+## The openev-data-mcp server itself: exposes EV specs from a PostgreSQL database
+## over the Model Context Protocol (streamable HTTP).
+mcp:
+  replicaCount: 1
+
+  image:
+    repository: ghcr.io/chargepi/openev-data-mcp
+    # -- Overrides the image tag, which defaults to v<chart appVersion> (images
+    # are tagged with the release's git tag). Also selects the migration ref
+    # unless migration.gitRef is set.
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  imagePullSecrets: []
+
+  service:
+    type: ClusterIP
+    # -- MCP (streamable HTTP) port.
+    port: 8080
+    # -- gRPC health-check port (probed with the grpc_health_probe binary
+    # baked into the image, since the app has no HTTP health endpoint).
+    healthPort: 9090
+
+  # -- Application configuration, rendered into the container's OPENEV_MCP_* env vars.
+  config:
+    # -- How often the server's in-memory resource cache refreshes from the database.
+    refreshInterval: 5m
+
+    observability:
+      enabled: false
+      # -- OTLP gRPC collector endpoint, e.g. "otel-collector.observability:4317".
+      otlpEndpoint: ""
+
+    # -- Semantic search (the search_vehicles tool) over the Qdrant collection
+    # populated by the vector sync job.
+    search:
+      # -- Qdrant collection holding one embedded document per vehicle.
+      collection: ev_vehicles
+      # -- Maximum number of vehicles returned per search.
+      limit: 10
+      # -- Matches below this cosine similarity are discarded.
+      minScore: 0.6
+
+    # -- Gemini embeddings, used to index vehicles and to embed search queries.
+    embedding:
+      # -- Gemini API key. Ignored when existingSecret is set; otherwise the
+      # chart stores it in a Secret. One of the two is required.
+      apiKey: ""
+      # -- Name of an existing Secret holding the Gemini API key.
+      existingSecret: ""
+      existingSecretKey: api-key
+      model: gemini-embedding-001
+      # -- Vector size. Changing it requires deleting the collection, since the
+      # sync refuses to mix dimensions.
+      dimensions: 768
+      # -- Texts per embedding request (Gemini allows at most 100).
+      batchSize: 100
+
+  extraEnv: []
+  # - name: SOME_EXTRA_VAR
+  #   value: "value"
+
+  livenessProbe:
+    exec:
+      command: ["/usr/local/bin/grpc_health_probe", "-addr=:9090"]
+    initialDelaySeconds: 5
+    periodSeconds: 10
+  readinessProbe:
+    exec:
+      command: ["/usr/local/bin/grpc_health_probe", "-addr=:9090"]
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+  resources: {}
+  # limits:
+  #   cpu: 500m
+  #   memory: 256Mi
+  # requests:
+  #   cpu: 100m
+  #   memory: 128Mi
+
+  serviceAccount:
+    create: true
+    annotations: {}
+    name: ""
+
+  podAnnotations: {}
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    fsGroup: 1000
+
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+    readOnlyRootFilesystem: false
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 80
+    # -- Set to a number to also scale on memory utilization; leave empty/0 to disable.
+    targetMemoryUtilizationPercentage: 80
+
+  ingress:
+    enabled: false
+    className: ""
+    annotations: {}
+    hosts:
+      - host: openev-mcp.local
+        paths:
+          - path: /
+            pathType: Prefix
+    tls: []
+
+## @section postgresql
+## openev-data-mcp requires PostgreSQL. This chart does NOT vendor a PostgreSQL
+## Helm chart as a Chart.yaml dependency: Bitnami's postgresql chart (the usual
+## default) had its free OCI images frozen in 2025, and a bundled operator
+## subchart would tie a cluster-scoped operator + CRDs to this release's
+## lifecycle. Instead it targets the CloudNativePG operator
+## (https://cloudnative-pg.io), which must already be installed once per
+## cluster (typically by a platform team, not per application release):
+##
+##   helm repo add cnpg https://cloudnative-pg.github.io/charts
+##   helm upgrade --install cnpg-operator cnpg/cloudnative-pg \
+##     --namespace cnpg-system --create-namespace
+postgresql:
+  # -- Connection SSL mode, used whether postgresql.cnpg or postgresql.external is active.
+  sslMode: disable
+
+  cnpg:
+    # -- Provision a dedicated Postgres cluster for this release via a CNPG
+    # `Cluster` resource. Requires the CloudNativePG operator (and its CRDs)
+    # to already be installed in the cluster. Set to false and configure
+    # postgresql.external instead to use a database you manage yourself.
+    enabled: true
+    # -- Defaults to "<release-name>-postgres" when empty.
+    clusterName: ""
+    instances: 1
+    # -- Defaults to the operator's own default PostgreSQL image when empty.
+    imageName: ""
+    # -- Name of the application database (and its owner role) created at bootstrap.
+    database: openevdata
+    storage:
+      size: 1Gi
+      storageClass: ""
+    resources: {}
+    # -- Passed through verbatim to Cluster.spec.postgresql (extra postgresql.conf
+    # parameters, pg_hba rules, etc). See the CNPG Cluster CRD reference.
+    postgresql: {}
+
+  # -- Used instead of postgresql.cnpg when postgresql.cnpg.enabled is false, to
+  # point at a database you manage yourself (a CNPG cluster in another
+  # namespace, RDS, a shared on-prem instance, etc).
+  external:
+    host: ""
+    port: 5432
+    database: openevdata
+    # -- Name of an existing Secret with the connection credentials.
+    existingSecret: ""
+    userKey: username
+    passwordKey: password
+
+## @section migration
+## openev-data-mcp does not run its schema migration on startup. This applies
+## migrations/001_initial.sql (schema + seed data) via a post-install-only Job
+## (it does not re-run on upgrade — see README), fetched at deploy time from
+## the project's GitHub repository at the release matching the deployed image
+## rather than vendored into this chart (mirrors how api.database.fetch works
+## in the open-ev-data chart).
+migration:
+  enabled: true
+  # -- Overrides the git ref (tag/branch/sha) to fetch migrations/001_initial.sql
+  # from. Defaults to the image tag (v<semver>); required when mcp.image.tag
+  # isn't a semver release (e.g. "latest" or a sha).
+  gitRef: ""
+  image:
+    repository: postgres
+    tag: "17-alpine"
+    pullPolicy: IfNotPresent
+  backoffLimit: 5
+  # -- Generous default to cover a first-time CNPG cluster bootstrap (image
+  # pull + volume provisioning + initdb) before the migration Job gives up.
+  activeDeadlineSeconds: 600
+
+## @section qdrant
+## Vector database for semantic search. By default the official Qdrant chart
+## (https://github.com/qdrant/qdrant-helm) is installed as a dependency; every
+## key below except `external` is passed through to it, see its values.yaml.
+qdrant:
+  # -- Install Qdrant alongside this release. Set to false and configure
+  # qdrant.external to use a Qdrant you manage yourself (e.g. Qdrant Cloud).
+  enabled: true
+  # -- Generate an API key, kept across upgrades in the "<qdrant fullname>-apikey"
+  # Secret, which the MCP server and the vector sync job read.
+  apiKey: true
+  persistence:
+    size: 1Gi
+
+  # -- Used instead of the bundled Qdrant when qdrant.enabled is false.
+  external:
+    host: ""
+    # -- gRPC port.
+    port: 6334
+    useTls: false
+    # -- Name of an existing Secret with the Qdrant API key; leave empty if the
+    # instance has no authentication.
+    existingSecret: ""
+    apiKeyKey: api-key
+
+## @section vectorSync
+## Runs `openev-data-mcp migrate`, which provisions the Qdrant collection and
+## embeds new or changed vehicles (unchanged ones are skipped, removed ones
+## deleted), so it is safe to re-run.
+vectorSync:
+  # -- Run the sync as a Helm hook on install (after the database migration)
+  # and on every upgrade. Helm waits for it, so a failed sync fails the
+  # release; on the Gemini free tier the first sync of the full dataset can
+  # exceed the daily quota, so either use a paid key, or disable this and rely
+  # on the CronJob below.
+  enabled: true
+  backoffLimit: 3
+  # -- Covers embedding the full dataset, including waits for per-minute
+  # rate limits on the Gemini free tier.
+  activeDeadlineSeconds: 3600
+  resources: {}
+
+  # -- Also re-run the sync on a schedule, e.g. to finish an initial index
+  # that hit the free-tier daily quota, or to pick up dataset changes.
+  cronJob:
+    enabled: false
+    schedule: "0 3 * * *"
+    successfulJobsHistoryLimit: 1
+    failedJobsHistoryLimit: 1

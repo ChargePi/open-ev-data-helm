@@ -1,0 +1,43 @@
+OpenEV Data MCP server has been deployed.
+
+MCP endpoint (streamable HTTP):
+{{- if .Values.mcp.ingress.enabled }}
+{{- range .Values.mcp.ingress.hosts }}
+  http{{ if $.Values.mcp.ingress.tls }}s{{ end }}://{{ .host }}{{ (first .paths).path }}
+{{- end }}
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "mcp.fullname" . }} {{ .Values.mcp.service.port }}:{{ .Values.mcp.service.port }}
+{{- end }}
+
+Database:
+{{- if .Values.postgresql.cnpg.enabled }}
+  A dedicated PostgreSQL cluster is managed by CloudNativePG (Cluster/{{ include "mcp.postgresClusterName" . }}).
+  This requires the CloudNativePG operator's CRDs to already be installed in the cluster:
+    helm repo add cnpg https://cloudnative-pg.github.io/charts
+    helm upgrade --install cnpg-operator cnpg/cloudnative-pg --namespace cnpg-system --create-namespace
+{{- else }}
+  Using the external database at {{ .Values.postgresql.external.host }}:{{ .Values.postgresql.external.port }},
+  credentials from Secret/{{ .Values.postgresql.external.existingSecret }}.
+{{- end }}
+{{- if .Values.migration.enabled }}
+  Schema + seed data were applied by a post-install Job that fetched
+  migrations/001_initial.sql from ChargePi/openev-data-mcp@{{ include "mcp.migrationGitRef" . }}.
+  This only runs once, on install — bump mcp.image.tag and re-run manually
+  (kubectl apply / helm template | kubectl apply -f -) to pick up a newer migration.
+{{- end }}
+
+Semantic search (search_vehicles tool):
+{{- if .Values.qdrant.enabled }}
+  Qdrant is installed alongside this release (Service/{{ include "mcp.qdrantFullname" . }}).
+{{- else }}
+  Using the external Qdrant at {{ .Values.qdrant.external.host }}:{{ .Values.qdrant.external.port }}.
+{{- end }}
+{{- if .Values.vectorSync.enabled }}
+  The collection "{{ .Values.mcp.config.search.collection }}" was synced by a hook Job, which re-runs on every upgrade.
+{{- end }}
+{{- if .Values.vectorSync.cronJob.enabled }}
+  CronJob/{{ include "mcp.fullname" . }}-vector-sync also re-syncs it on schedule "{{ .Values.vectorSync.cronJob.schedule }}".
+{{- end }}
+{{- if not (or .Values.vectorSync.enabled .Values.vectorSync.cronJob.enabled) }}
+  WARNING: vectorSync is disabled, so nothing fills the collection and searches return no results.
+{{- end }}

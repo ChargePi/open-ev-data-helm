@@ -1,0 +1,2 @@
+# Chart dependencies, fetched with `helm dependency build` (pinned by Chart.lock).
+charts/*/charts/

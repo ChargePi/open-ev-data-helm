@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mcp.fullname" . }}
+  labels:
+    {{- include "mcp.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.mcp.autoscaling.enabled }}
+  replicas: {{ .Values.mcp.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "mcp.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "mcp.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Roll the pods when the chart-managed Gemini API key changes.
+        checksum/embedding-secret: {{ include (print $.Template.BasePath "/embedding-secret.yaml") . | sha256sum }}
+        {{- with .Values.mcp.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "mcp.serviceAccountName" . }}
+      {{- with .Values.mcp.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.mcp.podSecurityContext | nindent 8 }}
+      containers:
+        - name: mcp
+          image: {{ include "mcp.image" . }}
+          imagePullPolicy: {{ .Values.mcp.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.mcp.securityContext | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.mcp.service.port }}
+              protocol: TCP
+            - name: health
+              containerPort: {{ .Values.mcp.service.healthPort }}
+              protocol: TCP
+          env:
+            {{- include "mcp.env" . | nindent 12 }}
+          {{- with .Values.mcp.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.mcp.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.mcp.resources | nindent 12 }}
+      {{- with .Values.mcp.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.mcp.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.mcp.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

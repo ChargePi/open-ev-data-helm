@@ -1,0 +1,25 @@
+apiVersion: v2
+name: openev-data-mcp
+description: Helm chart for the OpenEV Data MCP server, exposing EV specifications to AI assistants over the Model Context Protocol, backed by PostgreSQL and Qdrant semantic search
+type: application
+version: 0.2.0
+appVersion: "1.0.0"
+home: https://github.com/ChargePi/openev-data-mcp
+sources:
+  - https://github.com/ChargePi/openev-data-mcp
+maintainers:
+  - name: open-ev-data
+keywords:
+  - electric-vehicle
+  - ev
+  - mcp
+  - model-context-protocol
+  - postgresql
+  - cloudnative-pg
+  - qdrant
+  - semantic-search
+dependencies:
+  - name: qdrant
+    version: 1.19.2
+    repository: https://qdrant.github.io/qdrant-helm
+    condition: qdrant.enabled

@@ -1,0 +1,42 @@
+# Example values for pointing openev-data-mcp at a PostgreSQL database you
+# already manage yourself (RDS, a shared on-prem instance, a CNPG cluster in
+# another namespace, etc), instead of having this chart provision a dedicated
+# CNPG Cluster.
+#
+# The referenced Secret is NOT created by this chart — create it yourself
+# first, e.g.:
+#
+#   kubectl create secret generic openev-mcp-db-credentials \
+#     --from-literal=username=openevdata \
+#     --from-literal=password='<your-password>'
+#
+# Then apply the schema once against that database (this chart's migration
+# Job will do it automatically on install if migration.enabled stays true —
+# see the chart README for details on its post-install-only semantics), or
+# run migrations/001_initial.sql yourself and set migration.enabled: false.
+#
+# The Gemini API key for semantic search is read from an existing Secret too:
+#
+#   kubectl create secret generic openev-mcp-gemini --from-literal=api-key='<your-key>'
+#
+# Usage:
+#   helm install my-release charts/openev-data-mcp -f ci/external-db-values.yaml
+
+mcp:
+  config:
+    embedding:
+      existingSecret: openev-mcp-gemini
+
+postgresql:
+  sslMode: require
+
+  cnpg:
+    enabled: false
+
+  external:
+    host: my-postgres.example.internal
+    port: 5432
+    database: openevdata
+    existingSecret: openev-mcp-db-credentials
+    userKey: username
+    passwordKey: password

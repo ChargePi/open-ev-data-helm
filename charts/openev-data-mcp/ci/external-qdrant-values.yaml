@@ -1,0 +1,31 @@
+# Example values for pointing openev-data-mcp at a Qdrant you already manage
+# yourself (e.g. Qdrant Cloud), instead of installing the bundled Qdrant chart.
+#
+# The referenced Secrets are NOT created by this chart, create them first:
+#
+#   kubectl create secret generic openev-mcp-qdrant --from-literal=api-key='<qdrant-api-key>'
+#   kubectl create secret generic openev-mcp-gemini --from-literal=api-key='<gemini-api-key>'
+#
+# Usage:
+#   helm install my-release charts/openev-data-mcp -f ci/external-qdrant-values.yaml
+
+mcp:
+  config:
+    embedding:
+      existingSecret: openev-mcp-gemini
+
+qdrant:
+  enabled: false
+  external:
+    host: xyz-example.eu-central.aws.cloud.qdrant.io
+    port: 6334
+    useTls: true
+    existingSecret: openev-mcp-qdrant
+    apiKeyKey: api-key
+
+vectorSync:
+  # Re-run the sync nightly to finish an index cut short by the Gemini
+  # free-tier daily quota, and to pick up dataset changes.
+  cronJob:
+    enabled: true
+    schedule: "0 3 * * *"
