@@ -1,0 +1,34 @@
+name: open-ev-data chart
+
+on:
+  pull_request:
+    paths:
+      - "charts/open-ev-data/**"
+      - ".github/workflows/open-ev-data.yml"
+      - ".github/workflows/chart-test.yml"
+  push:
+    branches: [main]
+    paths:
+      - "charts/open-ev-data/**"
+      - ".github/workflows/open-ev-data.yml"
+      - ".github/workflows/chart-test.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    uses: ./.github/workflows/chart-test.yml
+    with:
+      chart: open-ev-data
+      template-args: |
+        --set api.database.fetch.enabled=false --set-json 'api.extraVolumes=[{"name":"dataset","persistentVolumeClaim":{"claimName":"my-pvc"}}]' --set-json 'api.extraVolumeMounts=[{"name":"dataset","mountPath":"/data","readOnly":true}]'
+      release: ev-mock
+      rollouts: deployment/ev-mock-api
+      smoke-test: |
+        kubectl -n "$RELEASE" port-forward svc/ev-mock-api 3000:3000 &
+        PF_PID=$!
+        sleep 5
+        curl -sf http://localhost:3000/api/v1/health
+        kill $PF_PID
